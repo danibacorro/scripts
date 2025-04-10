@@ -5,4 +5,4 @@ Scripts  realizados de forma grupal entre Juan Carlos Fernández, Iván Fornet, 
 Configuración Servidor DHCP(Instalar/Desinstalar, cambiar o configuración)
   Para este script se han realizado dos versiones, con y sin 'dialog'. Para la versión con 'dialog' es necesario tener instalado este paquete antes de ejecutarlo.
 
-Particionado de discos
+Creación de 128 particiones en un disco con tabla de particiones GPT.

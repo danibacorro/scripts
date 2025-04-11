@@ -1,24 +1,23 @@
 #!/bin/bash
 
-clear
-
 #!/bin/bash
 #Autor: Juan Carlos Fernández, Iván Fornet, Álvaro Cuesta, Daniel Baco, Ángel de la Vega, Alejandro Tejada
 #Fecha de creación: 09/04/25
 #Versión: 1.0
 #-----------------------------------------------
 
+clear
 bash 128GPTASCII
-# Nombre del log
-LOG_FILE="./partition_script.log"
 
-# Función para escribir mensajes en el log con timestamp (único uso en inicio)
-log_message() {
-    echo "$(date '+%Y-%m-%d %H:%M:%S') - $1" | tee -a "$LOG_FILE"
+# Nombre del log
+ARCHIVO_LOG="./partition_script.log"
+
+# Función para escribir mensajes en el log con timestamp
+escribir_log() {
+    echo "$(date '+%Y-%m-%d %H:%M:%S') - $1" | tee -a "$ARCHIVO_LOG"
 }
 
-# Escribir solo el inicio del script en el log
-log_message "Inicio del script 128GPT."
+escribir_log "Inicio del script 128GPT."
 
 # Verificar si el script se ejecuta con permisos de administrador
 if [ "$EUID" -ne 0 ]; then
@@ -97,51 +96,51 @@ echo "Iniciando el script."
 sleep 5
 
 # Obtener lista de discos disponibles sin particiones montadas y sin RAID
-filter_disks_without_partitions_or_raid() {
-    local disks; disks=$(lsblk -dn -o NAME,TYPE | awk '$2 == "disk" { print $1 }')
+filtrar_discos_sin_particiones_o_raid() {
+    local discos; discos=$(lsblk -dn -o NAME,TYPE | awk '$2 == "disk" { print $1 }')
     local raids_raw; raids_raw=$(mdadm --detail --scan 2>/dev/null)
     local raids="";
-    local disk;
+    local disco;
 
     if [[ -n "$raids_raw" ]]; then
         raids=$(grep -oE '/dev/[a-z]+[a-z]+' <<< "$raids_raw" | grep -E '^/dev/[a-z]+$' | xargs -n1 basename)
     fi
 
-    if [[ -z "$disks" ]]; then
+    if [[ -z "$discos" ]]; then
         printf "No se encontraron discos físicos.\n" >&2
         return 1
     fi
 
-    while IFS= read -r disk; do
-        local has_partitions; has_partitions=$(lsblk -n -o NAME "/dev/$disk" | grep -v "^$disk$")
+    while IFS= read -r disco; do
+        local tiene_particiones; tiene_particiones=$(lsblk -n -o NAME "/dev/$disco" | grep -v "^$disco$")
 
-        if [[ -n "$has_partitions" ]]; then
+        if [[ -n "$tiene_particiones" ]]; then
             continue
         fi
 
-        if [[ -n "$raids" ]] && printf "%s\n" "$raids" | grep -qw "$disk"; then
+        if [[ -n "$raids" ]] && printf "%s\n" "$raids" | grep -qw "$disco"; then
             continue
         fi
 
-        printf "/dev/%s\n" "$disk"
-    done <<< "$disks"
+        printf "/dev/%s\n" "$disco"
+    done <<< "$discos"
 }
 
-# Mostrar los discos disponibles y filtrar aquellos con RAID o particiones
-available_disks=$(filter_disks_without_partitions_or_raid)
+# Filtrar y obtener los discos disponibles
+discos_disponibles=$(filtrar_discos_sin_particiones_o_raid)
 
-if [ -z "$available_disks" ]; then
+if [ -z "$discos_disponibles" ]; then
     echo "No hay discos disponibles para particionar."
     exit 1
 fi
 
 # Crear lista de elementos para dialog: cada línea tendrá el nombre del disco y su información
 IFS=$'\n'
-menu_items=()
-for line in $available_disks; do
-    disk_name=$(echo "$line" | awk '{print $1}')
-    disk_info=$(lsblk -dn -o SIZE $disk_name)
-    menu_items+=("$disk_name" "$disk_info")
+elementos_menu=()
+for linea in $discos_disponibles; do
+    nombre_disco=$(echo "$linea" | awk '{print $1}')
+    info_disco=$(lsblk -dn -o SIZE "$nombre_disco")
+    elementos_menu+=("$nombre_disco" "$info_disco")
 done
 
 # Usar dialog para mostrar la selección de disco
@@ -150,7 +149,7 @@ disco_seleccionado=$(dialog --clear \
     --backtitle "Seleccionar Disco" \
     --title "Discos Disponibles" \
     --menu "Elige el disco que deseas particionar:" 15 60 6 \
-    "${menu_items[@]}" \
+    "${elementos_menu[@]}" \
     2>&1 1>&3)
 exit_status=$?
 exec 3>&-
@@ -168,11 +167,11 @@ if [ ! -e "$disco_seleccionado" ]; then
     exit 1
 fi
 
-DISK="$disco_seleccionado"
+DISCO="$disco_seleccionado"
 
 # Confirmación final con dialog --yesno
 dialog --title "⚠️ Advertencia" \
-    --yesno "¡ATENCIÓN!\n\nSe procederá a crear una tabla de particiones GPT en:\n\n  $DISK\n\nEsto BORRARÁ TODOS los datos del disco.\n\n¿Deseas continuar?" 15 60
+    --yesno "¡ATENCIÓN!\n\nSe procederá a crear una tabla de particiones GPT en:\n\n  $DISCO\n\nEsto BORRARÁ TODOS los datos del disco.\n\n¿Deseas continuar?" 15 60
 
 clear
 
@@ -183,7 +182,7 @@ if [ $? -ne 0 ]; then
 fi
 
 # Crear tabla de particiones GPT
-parted -s "$DISK" mklabel gpt
+parted -s "$DISCO" mklabel gpt
 if [ $? -ne 0 ]; then
     echo "Error al crear la tabla de particiones."
     exit 1
@@ -192,7 +191,7 @@ fi
 clear
 bash 128GPTASCII
 
-# Selección del número de particiones (se mantiene la entrada por teclado)
+# Selección del número de particiones
 echo "Seleccione una opción:"
 echo "1) Crear 128 particiones."
 echo "2) Crear un número personalizado de particiones."
@@ -224,16 +223,16 @@ esac
 for i in $(seq 1 $part); do
     start=$((i * 5))
     end=$((i * 5 + 4))
-    parted -s "$DISK" mkpart primary "${start}MiB" "${end}MiB"
+    parted -s "$DISCO" mkpart primary "${start}MiB" "${end}MiB"
     if [ $? -eq 0 ]; then
-        echo "Partición $i creada en $DISK."
+        echo "Partición $i creada en $DISCO."
     else
         echo "Error al crear la partición $i."
         exit 1
     fi
 done
 
-echo "Tabla de particiones de $DISK:"
-parted -s "$DISK" print
+echo "Tabla de particiones de $DISCO:"
+parted -s "$DISCO" print
 
 exit 0
